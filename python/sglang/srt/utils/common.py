@@ -616,7 +616,9 @@ def get_cmo_stream():
     return cmo_stream
 
 
-def prepare_weight_cache(handle, cache):
+@torch.library.custom_op("sglang::prepare_weight_cache", mutates_args=())
+def prepare_weight_cache(handle: torch.Tensor, cache: typing.List[torch.Tensor]) -> None:
+    print(f"prepare_weight_cache: type(handle)={type(handle)}, type(cache)={type(cache)}, type(cache[0])={type(cache[0])}", flush=True)
     import torch_npu
 
     NPU_PREFETCH_MAX_SIZE_BYTES = (
@@ -638,6 +640,10 @@ def prepare_weight_cache(handle, cache):
                 handle,
                 NPU_PREFETCH_MAX_SIZE_BYTES,
             )
+
+@prepare_weight_cache.register_fake
+def prepare_weight_cache(handle: torch.Tensor, cache: typing.List[torch.Tensor]) -> None:
+    pass
 
 
 def wait_cmo_stream():
@@ -1897,6 +1903,7 @@ def direct_register_custom_op(
     mutates_args: List[str],
     fake_impl: Optional[Callable] = None,
     target_lib: Optional[Library] = None,
+    dispatch_key=None,
 ):
     """
     `torch.library.custom_op` can have significant overhead because it
@@ -1945,7 +1952,7 @@ def direct_register_custom_op(
 
     try:
         my_lib.define(op_name + schema_str)
-        my_lib.impl(op_name, op_func, "CUDA")
+        my_lib.impl(op_name, op_func, "CUDA" if dispatch_key is None else dispatch_key)
         if fake_impl is not None:
             my_lib._register_fake(op_name, fake_impl)
     except RuntimeError as error:

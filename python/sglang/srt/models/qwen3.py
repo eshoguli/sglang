@@ -38,6 +38,13 @@ from sglang.srt.utils import (
     wait_cmo_stream,
 )
 
+from sglang.srt.utils import add_prefix, is_cuda, is_npu, supports_custom_op
+
+if supports_custom_op():
+    from sglang.srt._custom_ops import wait_cmo_stream, wait_cmo_stream_fake
+else:
+    from sglang.srt.utils import wait_cmo_stream
+
 Qwen3Config = None
 
 logger = logging.getLogger(__name__)
@@ -281,8 +288,7 @@ class Qwen3DecoderLayer(nn.Module):
             ),
         )
         hidden_states = self.mlp(hidden_states)
-        if _is_npu and get_cmo_stream():
-            wait_cmo_stream()
+        wait_cmo_stream()
         hidden_states, residual = self.layer_communicator.postprocess_layer(
             hidden_states, residual, forward_batch
         )
