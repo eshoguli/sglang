@@ -14,6 +14,8 @@
 
 import torch
 
+from sglang.srt.utils import get_compiler_backend
+
 from sglang.srt.compilation.npu.npu_compiler_backend import NpuBackend
 
 
@@ -21,7 +23,8 @@ class NpuGraphCompiler:
     def __init__(self, model: torch.nn.Module):
         torch._dynamo.reset()
 
-        self.backend = NpuBackend()
+        # self.backend = NpuBackend()
+        self.backend = get_compiler_backend()
         self.compiled_callable = torch.compile(
             model, fullgraph=True, dynamic=False, backend=self.backend
         )

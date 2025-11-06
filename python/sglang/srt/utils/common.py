@@ -1871,9 +1871,11 @@ def get_compiler_backend() -> str:
                 "Please install torchair for torch.compile support on NPU."
             )
         compiler_config = CompilerConfig()
-        predefined_config = get_npu_compiler_config()
-        for k, v in predefined_config.items():
-            setattr(compiler_config.experimental_config, k, v)
+        # predefined_config = get_npu_compiler_config()
+        # for k, v in predefined_config.items():
+        #     setattr(compiler_config.experimental_config, k, v)
+
+        # compiler_config.mode = "max-autotune"
 
         npu_backend = torchair.get_npu_backend(compiler_config=compiler_config)
         return npu_backend
