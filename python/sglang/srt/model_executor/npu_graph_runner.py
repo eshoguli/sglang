@@ -83,7 +83,7 @@ class NPUGraphRunner(CudaGraphRunner):
 
     def _create_device_graph(self):
         return torch.npu.NPUGraph()
-    
+
     def capture(self) -> None:
         # Reverse the order to enable better memory sharing across cuda graphs.
         capture_range = (
@@ -364,6 +364,12 @@ class NPUGraphRunner(CudaGraphRunner):
             ):
                 kwargs["pp_proxy_tensors"] = forward_batch.pp_proxy_tensors
             self.mark_static(forward_batch, kwargs.get("pp_proxy_tensors"))
+
+            self.model_runner.model.forward(
+                forward_batch.input_ids,
+                forward_batch.positions,
+                forward_batch
+            )
 
             with torch.no_grad():
                 logits_output_or_pp_proxy_tensors = forward(
