@@ -30,6 +30,7 @@ from sglang.srt.connector import ConnectorType
 from sglang.srt.environ import ToolStrictLevel, envs
 from sglang.srt.function_call.function_call_parser import FunctionCallParser
 from sglang.srt.lora.lora_registry import LoRARef
+from sglang.srt.compilation.npu.config import CompilationConfig
 from sglang.srt.parser.reasoning_parser import ReasoningParser
 from sglang.srt.utils.common import (
     LORA_TARGET_ALL_MODULES,
@@ -465,6 +466,7 @@ class ServerArgs:
     cuda_graph_bs: Optional[List[int]] = None
     disable_cuda_graph: bool = False
     disable_cuda_graph_padding: bool = False
+    enable_piecewise_graph: bool = False
     enable_profile_cuda_graph: bool = False
     enable_cudagraph_gc: bool = False
     enable_nccl_nvls: bool = False
@@ -537,6 +539,8 @@ class ServerArgs:
     num_reserved_decode_tokens: int = 512  # used for decode kv cache offload in PD
     # FIXME: hack to reduce ITL when decode bs is small
     disaggregation_decode_polling_interval: int = 1
+
+    compilation_config: Optional[CompilationConfig] = None
 
     # For model weight update and weight loading
     custom_weight_loader: Optional[List[str]] = None
@@ -640,6 +644,10 @@ class ServerArgs:
 
         # Handle elastic expert parallelism.
         self._handle_elastic_ep()
+
+        if not self.compilation_config:
+            self.compilation_config = CompilationConfig()
+            self.compilation_config.splitting_ops = ["atb._npu_paged_attention"]
 
     def _handle_deprecated_args(self):
         # handle deprecated tool call parsers
@@ -1172,6 +1180,7 @@ class ServerArgs:
                 "Cuda graph is disabled because of using torch native attention backend"
             )
             self.disable_cuda_graph = True
+            self.enable_piecewise_graph = False
 
         if self.attention_backend == "flex_attention":
             logger.warning(
@@ -1399,6 +1408,7 @@ class ServerArgs:
             if self.deepep_mode == "normal":
                 logger.warning("Cuda graph is disabled because deepep_mode=`normal`")
                 self.disable_cuda_graph = True
+                self.enable_piecewise_graph = False
             self.ep_size = self.tp_size
             logger.warning(
                 f"DeepEP MoE is enabled. The expert parallel size is adjusted to be the same as the tensor parallel size[{self.tp_size}]."
@@ -1672,6 +1682,8 @@ class ServerArgs:
             self.validate_disagg_tp_size(self.tp_size, self.disaggregation_decode_tp)
             self.disable_cuda_graph = True
             logger.warning("Cuda graph is disabled for prefill server")
+            self.enable_piecewise_graph = False
+            logger.warning("Piecewise graph is disabled for prefill server")
 
     def _handle_tokenizer_batching(self):
         if self.enable_tokenizer_batch_encode and self.enable_dynamic_batch_tokenizer:
@@ -2664,6 +2676,13 @@ class ServerArgs:
             choices=NSA_CHOICES,
         )
 
+        parser.add_argument(
+            "--compilation-config",
+            type=CompilationConfig.from_cli,
+            default=None,
+            help="Compilation config.",
+        )
+
         # Speculative decoding
         parser.add_argument(
             "--speculative-algorithm",
@@ -3141,6 +3160,11 @@ class ServerArgs:
             "--disable-cuda-graph",
             action="store_true",
             help="Disable cuda graph.",
+        )
+        parser.add_argument(
+            "--enable-piecewise-graph",
+            action="store_true",
+            help="Enable piecewise graph.",
         )
         parser.add_argument(
             "--disable-cuda-graph-padding",

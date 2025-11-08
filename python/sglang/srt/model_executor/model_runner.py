@@ -112,6 +112,7 @@ from sglang.srt.model_executor.cpu_graph_runner import CPUGraphRunner
 from sglang.srt.model_executor.cuda_graph_runner import CudaGraphRunner
 from sglang.srt.model_executor.forward_batch_info import ForwardBatch, PPProxyTensors
 from sglang.srt.model_executor.npu_graph_runner import NPUGraphRunner
+from sglang.srt.model_executor.piecewise_npu_graph_runner import PiecewiseGraphRunner
 from sglang.srt.model_executor.piecewise_cuda_graph_runner import (
     PiecewiseCudaGraphRunner,
 )
@@ -477,6 +478,7 @@ class ModelRunner:
             self.init_cublas()
             self.init_attention_backend()
             self.init_device_graphs()
+
         elif self.device in ["npu", "cpu"]:
             self.init_attention_backend()
             self.init_device_graphs()
@@ -1989,7 +1991,7 @@ class ModelRunner:
             lambda: CudaGraphRunner,
             {
                 "cpu": CPUGraphRunner,
-                "npu": NPUGraphRunner,
+                "npu": PiecewiseGraphRunner if self.server_args.enable_piecewise_graph else NPUGraphRunner,
             },
         )
         self.graph_runner = graph_runners[self.device](self)

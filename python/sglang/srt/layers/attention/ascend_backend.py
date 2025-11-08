@@ -75,6 +75,7 @@ class AscendAttnBackend(AttentionBackend):
     def __init__(self, model_runner: ModelRunner):
         super().__init__()
         self.enable_torch_compile = False
+        self.enable_piecewise_graph = False
         self.forward_metadata = None
         self.device = model_runner.device
         self.page_size = model_runner.page_size
@@ -577,7 +578,8 @@ class AscendAttnBackend(AttentionBackend):
                     layer, forward_batch.out_cache_loc, k, v
                 )
 
-        if not self.use_mla and self.enable_torch_compile:
+        if not self.use_mla and (self.enable_torch_compile or self.enable_piecewise_graph):
+            # print(f"AscendAttnBackend::forward_decode_graph: self.enable_piecewise_graph={self.enable_piecewise_graph}", flush=True)
             k_cache = forward_batch.token_to_kv_pool.get_key_buffer(layer.layer_id)
             v_cache = forward_batch.token_to_kv_pool.get_value_buffer(layer.layer_id)
             query = q.reshape(-1, layer.tp_q_head_num, layer.qk_head_dim)
@@ -594,6 +596,13 @@ class AscendAttnBackend(AttentionBackend):
                 )
             else:
                 actual_seq_len_kv = self.forward_metadata.seq_lens_cpu_int
+
+            if torch.compiler.is_dynamo_compiling():
+                # fake source code to extract into separate submodule in compiler backend
+                # ideally we need to develop torch.fx transformation
+                forward_batch.req_to_token_pool.req_to_token.add_(forward_batch.req_to_token_pool.req_to_token)
+                forward_batch.req_pool_indices.add_(forward_batch.req_pool_indices)
+                forward_batch.seq_lens.add_(forward_batch.seq_lens)
 
             torch_npu._npu_paged_attention(
                 query=query,
@@ -752,6 +761,7 @@ class AscendAttnBackend(AttentionBackend):
                 topk_indices,
             )
 
+        # print(f"AscendAttnBackend::forward_decode: self.graph_mode={self.graph_mode}, self.enable_piecewise_graph={self.enable_piecewise_graph}", flush=True)
         if self.graph_mode:
             return self.forward_decode_graph(
                 q,
