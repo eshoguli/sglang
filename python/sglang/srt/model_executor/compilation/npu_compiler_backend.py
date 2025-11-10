@@ -23,6 +23,13 @@ import torch
 from sglang.srt.compilation.npu.config import CompilationConfig
 from sglang.srt.compilation.npu.compilation_context import CompilationContext
 
+from sglang.srt.compilation.npu.pass_manager import PassManager
+from sglang.srt.compilation.npu.passes.w8a8_int8.div_fuse import DivFuse
+from sglang.srt.compilation.npu.passes.w8a8_int8.erase_copy import EraseCopy
+from sglang.srt.compilation.npu.passes.w8a8_int8.npu_add_rms_norm_quant_fuse import (
+    NpuAddRmsNormQuantFuse,
+)
+
 from torch._dynamo.eval_frame import DisableContext
 
 from sglang.srt.distributed import (
@@ -35,7 +42,7 @@ import logging
 logger = logging.getLogger(__name__)
 
 
-class submod_1(torch.nn.Module):
+class Submodule(torch.nn.Module):
     block_tables = None
 
     def __init__(self, page_size, model_config):
@@ -64,6 +71,25 @@ class submod_1(torch.nn.Module):
 
         self.scaling = self.head_dim**-0.5
 
+    def forward_with_calculation(
+            self,
+            l_args_2_req_to_token_pool_req_to_token,
+            l_args_2_req_pool_indices,
+            l_args_2_seq_lens,
+            query_2,
+            l_args_2_token_to_kv_pool_k_buffer_0_,
+            l_args_2_token_to_kv_pool_v_buffer_0_,
+            l_args_2_attn_backend_forward_metadata_block_tables,
+            l_args_2_attn_backend_forward_metadata_seq_lens_cpu_int,
+            output):
+        Submodule.block_tables = (
+            l_args_2_req_to_token_pool_req_to_token[
+                l_args_2_req_pool_indices, : l_args_2_seq_lens.max()
+            ][:, :: self.page_size]
+            // self.page_size
+        )
+        _npu_paged_attention = torch.ops.atb._npu_paged_attention(query = query_2, key_cache = l_args_2_token_to_kv_pool_k_buffer_0_, value_cache = l_args_2_token_to_kv_pool_v_buffer_0_, num_heads = self.num_heads, num_kv_heads = self.num_kv_heads, scale_value = self.scaling, block_table = Submodule.block_tables, context_lens = l_args_2_attn_backend_forward_metadata_seq_lens_cpu_int, out = output)
+
     def forward(
             self,
             l_args_2_req_to_token_pool_req_to_token,
@@ -75,26 +101,7 @@ class submod_1(torch.nn.Module):
             l_args_2_attn_backend_forward_metadata_block_tables,
             l_args_2_attn_backend_forward_metadata_seq_lens_cpu_int,
             output):
-        submod_1.block_tables = (
-            l_args_2_req_to_token_pool_req_to_token[
-                l_args_2_req_pool_indices, : l_args_2_seq_lens.max()
-            ][:, :: self.page_size]
-            // self.page_size
-        )
-        _npu_paged_attention = torch.ops.atb._npu_paged_attention(query = query_2, key_cache = l_args_2_token_to_kv_pool_k_buffer_0_, value_cache = l_args_2_token_to_kv_pool_v_buffer_0_, num_heads = self.num_heads, num_kv_heads = self.num_kv_heads, scale_value = self.scaling, block_table = submod_1.block_tables, context_lens = l_args_2_attn_backend_forward_metadata_seq_lens_cpu_int, out = output)
-
-    def forward2(
-            self,
-            l_args_2_req_to_token_pool_req_to_token,
-            l_args_2_req_pool_indices,
-            l_args_2_seq_lens,
-            query_2,
-            l_args_2_token_to_kv_pool_k_buffer_0_,
-            l_args_2_token_to_kv_pool_v_buffer_0_,
-            l_args_2_attn_backend_forward_metadata_block_tables,
-            l_args_2_attn_backend_forward_metadata_seq_lens_cpu_int,
-            output):
-        _npu_paged_attention = torch.ops.atb._npu_paged_attention(query = query_2, key_cache = l_args_2_token_to_kv_pool_k_buffer_0_, value_cache = l_args_2_token_to_kv_pool_v_buffer_0_, num_heads = self.num_heads, num_kv_heads = self.num_kv_heads, scale_value = self.scaling, block_table = submod_1.block_tables, context_lens = l_args_2_attn_backend_forward_metadata_seq_lens_cpu_int, out = output)
+        _npu_paged_attention = torch.ops.atb._npu_paged_attention(query = query_2, key_cache = l_args_2_token_to_kv_pool_k_buffer_0_, value_cache = l_args_2_token_to_kv_pool_v_buffer_0_, num_heads = self.num_heads, num_kv_heads = self.num_kv_heads, scale_value = self.scaling, block_table = Submodule.block_tables, context_lens = l_args_2_attn_backend_forward_metadata_seq_lens_cpu_int, out = output)
 
 
 def resolve_obj_by_qualname(qualname: str) -> Any:
@@ -175,7 +182,7 @@ class NpuBackend:
         DisableContext.compiled_function_args[DisableContext.batch_size] = example_inputs
 
         self.graph = graph
-        # NpuBackend.apply_passes(self.graph)
+        NpuBackend.apply_passes(self.graph)
         self.split_gm, self.piecewise_graphs = NpuBackend.split_graph(self.graph, self.compilation_config.splitting_ops)
 
         npu_graph_backend = resolve_obj_by_qualname("sglang.srt.model_executor.compilation.npu_graph_backend.NPUGraphBackend")
@@ -185,19 +192,19 @@ class NpuBackend:
         ]
 
         named_modules = self.split_gm.named_modules()
-        submod = submod_1(self.page_size, self.model_config)
-        use_forward2 = False
+        submod = Submodule(self.page_size, self.model_config)
+        use_forward = False
         for name, graph_module in named_modules:
             if not name:
                 continue
 
             graph = getattr(self.split_gm, name)
             if name in self.submod_names_compiled_only:
-                if use_forward2:
-                    self.split_gm.__dict__[name] = submod.forward2
-                else:
+                if use_forward:
                     self.split_gm.__dict__[name] = submod.forward
-                use_forward2 = True
+                else:
+                    self.split_gm.__dict__[name] = submod.forward_with_calculation
+                use_forward = True
             else:
                 self.split_gm.__dict__[name] = npu_graph_backend(self.model_runner, graph, self.compilation_context)
 
@@ -206,7 +213,11 @@ class NpuBackend:
         return self.split_gm.forward
 
     def apply_passes(graph_module: torch.fx.GraphModule):
-        torch.fx.replace_pattern(graph_module, NpuAddRmsNormFuse.pattern, NpuAddRmsNormFuse.replacement)
+        passManager = PassManager(graph_module)
+        passManager.add(NpuAddRmsNormQuantFuse)
+        passManager.add(DivFuse)
+        passManager.add(EraseCopy)
+        passManager.apply()
         graph_module.recompile()
 
     def split_graph(graph: torch.fx.GraphModule, ops: list[str]) -> tuple[torch.fx.GraphModule, list[SplitItem]]:
