@@ -487,6 +487,7 @@ class ServerArgs:
     enable_single_batch_overlap: bool = False
     tbo_token_distribution_threshold: float = 0.48
     enable_torch_compile: bool = False
+    disable_torch_compile_passes: bool = False
     enable_piecewise_cuda_graph: bool = False
     torch_compile_max_bs: int = 32
     piecewise_cuda_graph_max_tokens: int = 4096
@@ -1843,6 +1844,11 @@ class ServerArgs:
                 "Torch compile is disabled because custom ops are not supported"
             )
             self.enable_torch_compile = False
+
+        if is_npu() and self.enable_torch_compile and self.disable_torch_compile_passes:
+            logger.warning(
+                "Compilation is enabled but passes are disabled. Enable passes for performance improvement."
+            )
 
     @staticmethod
     def add_cli_args(parser: argparse.ArgumentParser):
@@ -3273,6 +3279,11 @@ class ServerArgs:
             "--enable-torch-compile",
             action="store_true",
             help="Optimize the model with torch.compile. Experimental feature.",
+        )
+        parser.add_argument(
+            "--disable-torch-compile-passes",
+            action="store_true",
+            help="Disable passes with torch.compile.",
         )
         parser.add_argument(
             "--enable-piecewise-cuda-graph",

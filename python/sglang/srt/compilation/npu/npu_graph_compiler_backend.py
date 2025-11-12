@@ -23,6 +23,7 @@ from sglang.srt.compilation.npu.passes.w8a8_int8 import (
     EraseCopy,
     NpuAddRmsNormQuantFuse,
 )
+from sglang.srt.server_args import get_global_server_args
 
 
 class NpuGraphCompilerBackend:
@@ -30,7 +31,9 @@ class NpuGraphCompilerBackend:
         DisableContext.compiled_function_args[DisableContext.batch_size] = (
             example_inputs
         )
-        NpuGraphCompilerBackend.apply_passes(graph)
+        if not get_global_server_args().disable_torch_compile_passes:
+            NpuGraphCompilerBackend.apply_passes(graph)
+
         return graph
 
     def apply_passes(graph_module: torch.fx.GraphModule):
