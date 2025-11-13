@@ -21,6 +21,7 @@ from sglang.srt.utils import (
     is_hip,
     is_npu,
     is_xpu,
+    supports_custom_op,
 )
 
 _is_cuda = is_cuda()
@@ -44,6 +45,11 @@ if is_npu():
 
     NPU_ROTARY_MUL_MAX_NUM_HEADS = 1000
     NPU_ROTARY_MUL_MAX_HEAD_SIZE = 896
+
+    if supports_custom_op() and get_global_server_args().enable_torch_compile:
+        from sglang.srt.compilation.npu.patch_compile import patch_compile
+
+        patch_compile()
 
 
 def _rotate_neox(x: torch.Tensor) -> torch.Tensor:
