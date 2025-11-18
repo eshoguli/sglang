@@ -112,6 +112,7 @@ from sglang.srt.mem_cache.memory_pool import (
 from sglang.srt.model_executor.cpu_graph_runner import CPUGraphRunner
 from sglang.srt.model_executor.cuda_graph_runner import CudaGraphRunner
 from sglang.srt.model_executor.forward_batch_info import ForwardBatch, PPProxyTensors
+from sglang.srt.model_executor.npu_compile_model_runner import NPUCompileModelRunner
 from sglang.srt.model_executor.npu_graph_runner import NPUGraphRunner
 from sglang.srt.model_executor.piecewise_cuda_graph_runner import (
     PiecewiseCudaGraphRunner,
@@ -119,7 +120,6 @@ from sglang.srt.model_executor.piecewise_cuda_graph_runner import (
 from sglang.srt.model_executor.piecewise_npu_graph_runner_decode import (
     PiecewiseNPUGraphRunnerDecode,
 )
-from sglang.srt.model_executor.torch_air_runner import TorchAirRunner
 from sglang.srt.model_loader import get_model
 from sglang.srt.model_loader.loader import DefaultModelLoader, get_model_loader
 from sglang.srt.model_loader.remote_instance_weight_loader_utils import (
@@ -1990,7 +1990,7 @@ class ModelRunner:
             # TODO: Currently, cuda graph only captures decode steps, which only exists for generation models
             return
 
-        if self.device != "cpu" and self.server_args.disable_cuda_graph:
+        if self.device not in ["cpu", "npu"] and self.server_args.disable_cuda_graph:
             return
 
         if self.device == "cpu" and not self.server_args.enable_torch_compile:
@@ -2011,8 +2011,8 @@ class ModelRunner:
                 {
                     "cpu": CPUGraphRunner,
                     "npu": (
-                        TorchAirRunner
-                        if self.server_args.enable_torch_air_compile
+                        NPUCompileModelRunner
+                        if self.server_args.disable_cuda_graph
                         else NPUGraphRunner
                     ),
                 },

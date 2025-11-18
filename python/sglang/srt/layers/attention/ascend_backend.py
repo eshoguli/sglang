@@ -111,9 +111,10 @@ class AscendAttnBackend(AttentionBackend):
         self.mtp_mask = ~self.mtp_mask
 
         self.enable_torch_air_compile = (
-            model_runner.server_args.enable_torch_air_compile
+            model_runner.server_args.disable_cuda_graph
+            and model_runner.server_args.enable_torch_compile
         )
-        if model_runner.server_args.enable_torch_air_compile:
+        if self.enable_torch_air_compile:
             max_total_tokens = model_runner.max_total_num_tokens
             self.max_seqlen_pad = max_total_tokens // model_runner.server_args.page_size
 

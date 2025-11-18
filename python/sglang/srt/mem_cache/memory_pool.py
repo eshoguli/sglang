@@ -1180,7 +1180,8 @@ class AscendTokenToKVPool(MHATokenToKVPool):
         self.is_npu = is_npu()
         self.supports_custom_op = supports_custom_op()
         self.enable_torch_air_compile = (
-            get_global_server_args().enable_torch_air_compile
+            get_global_server_args().disable_cuda_graph
+            and get_global_server_args().enable_torch_compile
         )
 
         self.use_fia = get_bool_env_var("ASCEND_USE_FIA", "False")

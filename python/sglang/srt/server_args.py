@@ -499,7 +499,6 @@ class ServerArgs:
     enable_single_batch_overlap: bool = False
     tbo_token_distribution_threshold: float = 0.48
     enable_torch_compile: bool = False
-    enable_torch_air_compile: bool = False
     enable_piecewise_cuda_graph: bool = False
     torch_compile_max_bs: int = 32
     piecewise_cuda_graph_max_tokens: int = 4096
@@ -1892,7 +1891,6 @@ class ServerArgs:
                 "Torch compile is disabled because custom ops are not supported"
             )
             self.enable_torch_compile = False
-            self.enable_torch_air_compile = False
 
     @staticmethod
     def add_cli_args(parser: argparse.ArgumentParser):

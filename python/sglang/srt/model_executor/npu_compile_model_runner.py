@@ -23,12 +23,7 @@ import torch
 import tqdm
 
 from sglang.srt.distributed import get_tensor_model_parallel_rank
-from sglang.srt.distributed.parallel_state import graph_capture
-from sglang.srt.utils import (
-    empty_context,
-    get_available_gpu_memory,
-    get_compiler_backend,
-)
+from sglang.srt.utils import get_available_gpu_memory, get_compiler_backend
 
 logger = logging.getLogger(__name__)
 
@@ -36,74 +31,56 @@ if TYPE_CHECKING:
     from sglang.srt.model_executor.model_runner import ModelRunner
 
 from sglang.srt.layers.logits_processor import LogitsProcessorOutput
-from sglang.srt.model_executor.cuda_graph_runner import get_batch_sizes_to_capture
-from sglang.srt.model_executor.forward_batch_info import ForwardBatch, PPProxyTensors
+from sglang.srt.model_executor.cuda_graph_runner import (
+    CudaGraphRunner
+)
+from sglang.srt.model_executor.forward_batch_info import (
+    ForwardBatch,
+    PPProxyTensors,
+    CaptureHiddenMode,
+)
 
 
-class TorchAirRunner:
-    """A TorchAirRunner runs the forward pass of a model with torch air."""
-
+class NPUCompileModelRunner(CudaGraphRunner):
     def __init__(self, model_runner: ModelRunner):
-        print(f"TorchAirRunner::__init__", flush=True)
-        # TODO: not clear: is it possible to have False value?
-        self.enable_torch_compile = True
-        self.capture_bs, self.compile_bs = get_batch_sizes_to_capture(model_runner)
+        super().__init__(model_runner)
 
     def capture(self) -> None:
         # Reverse the order to enable better memory sharing across cuda graphs.
-        capture_range = (
-            tqdm.tqdm(list(reversed(self.capture_bs)))
+        compile_range = (
+            tqdm.tqdm(list(reversed(self.compile_bs)))
             if get_tensor_model_parallel_rank() == 0
-            else reversed(self.capture_bs)
+            else reversed(self.compile_bs)
         )
 
-        graph_capture_context = empty_context()
+        backend = get_compiler_backend("reduce-overhead")
+        compile_forward = torch.compile(
+            torch.no_grad()(self.model_runner.model.forward),
+            fullgraph=True,
+            dynamic=True,
+            backend=backend,
+        )
 
-        # TODO: not clear: is it possible to have False value?
-        if self.enable_torch_compile:
-            backend = get_compiler_backend("reduce-overhead")
-            compile_forward = torch.compile(
-                torch.no_grad()(self.model_runner.model.forward),
-                fullgraph=True,
-                dynamic=True,
-                backend=backend,
-            )
+        self.model_runner.model.compile_forward = compile_forward
 
-            self.model_runner.model.compile_forward = compile_forward
+        @torch.compile(dynamic=True, backend=get_compiler_backend())
+        def run_for_init(input):
+            return input + 1
 
-            @torch.compile(dynamic=True, backend=get_compiler_backend())
-            def run_for_init(input):
-                return input + 1
+        run_for_init(torch.zeros([1]).to(self.model_runner.device))
 
-            run_for_init(torch.zeros([1]).to(self.model_runner.device))
-        else:
-            graph_capture_context = graph_capture()
+        for i, bs in enumerate(compile_range):
+            if get_tensor_model_parallel_rank() == 0:
+                avail_mem = get_available_gpu_memory(
+                    self.model_runner.device,
+                    self.model_runner.gpu_id,
+                    empty_cache=False,
+                )
+                compile_range.set_description(
+                    f"Compiling batches ({bs=} {avail_mem=:.2f} GB)"
+                )
 
-        with graph_capture_context as context:
-            self.stream = context.stream if hasattr(context, "stream") else None
-            for i, bs in enumerate(capture_range):
-                if get_tensor_model_parallel_rank() == 0:
-                    avail_mem = get_available_gpu_memory(
-                        self.model_runner.device,
-                        self.model_runner.gpu_id,
-                        empty_cache=False,
-                    )
-                    capture_range.set_description(
-                        f"Capturing batches ({bs=} {avail_mem=:.2f} GB)"
-                    )
-
-                forward = self.model_runner.model.forward
-                if bs in self.compile_bs:
-                    forward = compile_forward
-                    self.warm_up(bs, forward)
-
-                if not self.enable_torch_compile:
-                    (
-                        graph,
-                        output_buffers,
-                    ) = self.capture_one_batch_size(bs, forward)
-                    self.graphs[bs] = graph
-                    self.output_buffers[bs] = output_buffers
+            self.warm_up(bs, compile_forward)
 
     def replay(
         self,
@@ -111,21 +88,20 @@ class TorchAirRunner:
         skip_attn_backend_init: bool = False,
         pp_proxy_tensors: Optional[PPProxyTensors] = None,
     ) -> Union[LogitsProcessorOutput, PPProxyTensors]:
-        if self.enable_torch_compile:
-            if not skip_attn_backend_init:
-                forward_batch.attn_backend.init_forward_metadata(forward_batch)
+        if not skip_attn_backend_init:
+            forward_batch.attn_backend.init_forward_metadata(forward_batch)
 
-            kwargs = {}
-            if pp_proxy_tensors is not None:
-                kwargs["pp_proxy_tensors"] = pp_proxy_tensors
+        kwargs = {}
+        if pp_proxy_tensors is not None:
+            kwargs["pp_proxy_tensors"] = pp_proxy_tensors
 
-            with torch.no_grad():
-                return self.model_runner.model.compile_forward(
-                    forward_batch.input_ids,
-                    forward_batch.positions,
-                    forward_batch,
-                    **kwargs,
-                )
+        with torch.no_grad():
+            return self.model_runner.model.compile_forward(
+                forward_batch.input_ids,
+                forward_batch.positions,
+                forward_batch,
+                **kwargs,
+            )
 
     def prepare_forward_batch(self, bs: int, num_tokens: int) -> ForwardBatch:
         # Graph inputs
@@ -265,9 +241,6 @@ class TorchAirRunner:
             mark_tensor_static(forward_batch.token_to_kv_pool.kv_buffer, is_cache=True)
 
     def can_run(self, forward_batch: ForwardBatch):
-        if not self.enable_torch_compile:
-            return super().can_run(forward_batch)
-
         return (
             forward_batch.forward_mode.is_decode()
             and forward_batch.batch_size in self.compile_bs
