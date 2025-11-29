@@ -38,10 +38,10 @@ class SlitQkvRmsnormRopeFuse:
         npu_rms_norm_k = torch.ops.npu.npu_rms_norm(
             k_by_head, k_norm_parameters_weight, 1e-06
         )
-        k_by_head_1 = npu_rms_norm_q[0]
+        k_by_head_1 = npu_rms_norm_k[0]
 
         q_1 = q_by_head_1.view((128, 4096))
-        k_1 = k_by_head_1.view((128, 4096))
+        k_1 = k_by_head_1.view((128, 512))
 
         npu_mrope = torch.ops.npu.npu_mrope(
             positions,
@@ -73,17 +73,17 @@ class SlitQkvRmsnormRopeFuse:
         cos = chunk[0]
         sin = chunk[1]
 
-        view = cos.view(-1, 1, 1, 128)
-        contiguous = view.contiguous()
+        cos_view = cos.view(-1, 1, 1, 128)
+        cos_contiguous = cos_view.contiguous()
 
-        view_1 = cos.view(-1, 1, 1, 128)
-        contiguous_1 = view_1.contiguous()
+        sin_view = sin.view(-1, 1, 1, 128)
+        sin_contiguous = sin_view.contiguous()
 
         split_qkv_rmsnorm_rope_default = (
             torch.ops.sglang.split_qkv_rmsnorm_rope.default(
                 output_parallel,
-                contiguous_1,
-                contiguous,
+                sin_contiguous,
+                cos_contiguous,
                 q_norm_parameters_weight,
                 k_norm_parameters_weight,
                 4096,
