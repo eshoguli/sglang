@@ -17,6 +17,7 @@ from typing import Callable
 import torch
 
 from sglang.srt.compilation.npu.pass_manager import PassManager
+from sglang.srt.compilation.npu.passes.fp16 import SlitQkvRmsnormRopeFuse
 from sglang.srt.compilation.npu.passes.w8a8_int8 import (
     DivFuse,
     EraseCopy,
@@ -36,6 +37,7 @@ class NpuGraphCompilerBackend:
 
     def apply_passes(graph_module: torch.fx.GraphModule):
         passManager = PassManager(graph_module)
+        passManager.add(SlitQkvRmsnormRopeFuse)
         passManager.add(NpuAddRmsNormQuantFuse)
         passManager.add(NpuAddRmsNormDynamicQuantFuse)
         passManager.add(DivFuse)
