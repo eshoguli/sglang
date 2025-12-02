@@ -15,7 +15,27 @@
 import torch
 
 
-class SlitQkvRmsnormRopeFuse:
+class SplitQkvRmsnormRopeFuse:
+    instance = None
+
+    def __init__(
+        self,
+        q_size: int,
+        kv_size: int,
+        head_dim: int,
+        q_shape,
+        k_shape,
+        variance_epsilon: float,
+    ):
+        self.q_size = q_size
+        self.kv_size = (kv_size,)
+        self.head_dim = head_dim
+        self.q_shape = q_shape
+        self.k_shape = k_shape
+        self.variance_epsilon = variance_epsilon
+
+        SplitQkvRmsnormRopeFuse.instance = self
+
     def pattern(
         output_parallel,
         q_norm_parameters_weight,
@@ -23,32 +43,35 @@ class SlitQkvRmsnormRopeFuse:
         positions,
         cos_sin_cache,
     ):
-        split = output_parallel.split([4096, 512, 512], dim=-1)
+        # pattern matching brokes if make static method as class method
+        self = SplitQkvRmsnormRopeFuse.instance
+
+        split = output_parallel.split([self.q_size, self.kv_size, self.kv_size], dim=-1)
         q = split[0]
         k = split[1]
         v = split[2]
 
-        q_by_head = q.reshape(-1, 128)
+        q_by_head = q.reshape(-1, self.head_dim)
         npu_rms_norm_q = torch.ops.npu.npu_rms_norm(
-            q_by_head, q_norm_parameters_weight, 1e-06
+            q_by_head, q_norm_parameters_weight, self.variance_epsilon
         )
         q_by_head_1 = npu_rms_norm_q[0]
 
-        k_by_head = k.reshape(-1, 128)
+        k_by_head = k.reshape(-1, self.head_dim)
         npu_rms_norm_k = torch.ops.npu.npu_rms_norm(
-            k_by_head, k_norm_parameters_weight, 1e-06
+            k_by_head, k_norm_parameters_weight, self.variance_epsilon
         )
         k_by_head_1 = npu_rms_norm_k[0]
 
-        q_1 = q_by_head_1.view((128, 4096))
-        k_1 = k_by_head_1.view((128, 512))
+        q_1 = q_by_head_1.view(self.q_shape)
+        k_1 = k_by_head_1.view(self.k_shape)
 
         npu_mrope = torch.ops.npu.npu_mrope(
             positions,
             q_1,
             k_1,
             cos_sin_cache,
-            128,
+            self.head_dim,
             mrope_section=[0, 0, 0],
             rotary_mode="half",
         )
@@ -64,6 +87,9 @@ class SlitQkvRmsnormRopeFuse:
         positions,
         cos_sin_cache,
     ):
+        # pattern matching brokes if make static method as class method
+        self = SplitQkvRmsnormRopeFuse.instance
+
         flatten = positions.flatten()
         cos_sin = cos_sin_cache.index_select(0, flatten)
 
@@ -73,10 +99,10 @@ class SlitQkvRmsnormRopeFuse:
         cos = chunk[0]
         sin = chunk[1]
 
-        cos_view = cos.view(-1, 1, 1, 128)
+        cos_view = cos.view(-1, 1, 1, self.head_dim)
         cos_contiguous = cos_view.contiguous()
 
-        sin_view = sin.view(-1, 1, 1, 128)
+        sin_view = sin.view(-1, 1, 1, self.head_dim)
         sin_contiguous = sin_view.contiguous()
 
         split_qkv_rmsnorm_rope_default = (
@@ -86,10 +112,10 @@ class SlitQkvRmsnormRopeFuse:
                 cos_contiguous,
                 q_norm_parameters_weight,
                 k_norm_parameters_weight,
-                4096,
-                512,
-                128,
-                1e-06,
+                self.q_size,
+                self.kv_size,
+                self.head_dim,
+                self.variance_epsilon,
                 q_bias=None,
                 k_bias=None,
             )
