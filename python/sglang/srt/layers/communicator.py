@@ -1,4 +1,4 @@
-# Copyright 2023-2025 SGLang Team
+# Copyright 2023-2024 SGLang Team
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
 # You may obtain a copy of the License at
@@ -59,6 +59,7 @@ from sglang.srt.utils import (
     is_npu,
     is_sm90_supported,
     is_sm100_supported,
+    prepare_weight_cache,
 )
 
 _is_cuda = is_cuda()
@@ -780,7 +781,7 @@ class CommunicateWithAllReduceAndLayerNormFn:
             else:
                 hidden_states = tensor_model_parallel_all_reduce(hidden_states)
                 if _is_npu and context.cache is not None:
-                    torch.ops.sglang.prepare_weight_cache(hidden_states, context.cache)
+                    _ = prepare_weight_cache(hidden_states, context.cache)
                 hidden_states, residual = layernorm(hidden_states, residual)
         return hidden_states, residual
 

@@ -6,6 +6,7 @@ from typing import Callable, Optional, Union
 
 import torch
 from torch.nn import Parameter
+from torch.nn.parameter import _ParameterMeta
 
 from sglang.srt.layers.utils import pad_or_narrow_weight
 from sglang.srt.utils import is_cpu
@@ -27,7 +28,14 @@ logger = logging.getLogger(__name__)
 _is_cpu = is_cpu()
 
 
-class BasevLLMParameter(Parameter):
+class _BasevLLMParameterMeta(_ParameterMeta):
+    def __instancecheck__(self, instance):
+        if self is BasevLLMParameter or isinstance(instance, torch.Tensor):
+            return True
+        return super().__instancecheck__(instance)
+
+
+class BasevLLMParameter(Parameter, metaclass=_BasevLLMParameterMeta):
     """
     Base parameter for vLLM linear layers. Extends the torch.nn.parameter
     by taking in a linear weight loader. Will copy the loaded weight
@@ -71,7 +79,14 @@ class BasevLLMParameter(Parameter):
         self._assert_and_load(loaded_weight)
 
 
-class _ColumnvLLMParameter(BasevLLMParameter):
+class _ColumnvLLMParameterMeta(_BasevLLMParameterMeta):
+    def __instancecheck__(self, instance):
+        if self is _ColumnvLLMParameter or isinstance(instance, torch.Tensor):
+            return True
+        return super().__instancecheck__(instance)
+
+
+class _ColumnvLLMParameter(BasevLLMParameter, metaclass=_ColumnvLLMParameterMeta):
     """
     Private class defining weight loading functionality
     (load_merged_column_weight, load_qkv_weight)
@@ -223,7 +238,14 @@ class _ColumnvLLMParameter(BasevLLMParameter):
         param_data.copy_(loaded_weight)
 
 
-class RowvLLMParameter(BasevLLMParameter):
+class _RowvLLMParameterMeta(_BasevLLMParameterMeta):
+    def __instancecheck__(self, instance):
+        if self is RowvLLMParameter or isinstance(instance, torch.Tensor):
+            return True
+        return super().__instancecheck__(instance)
+
+
+class RowvLLMParameter(BasevLLMParameter, metaclass=_RowvLLMParameterMeta):
     """
     Parameter class defining weight_loading functionality
     (load_row_parallel_weight) for parameters being loaded
@@ -286,7 +308,16 @@ class RowvLLMParameter(BasevLLMParameter):
         self.data.copy_(loaded_weight)
 
 
-class ModelWeightParameter(_ColumnvLLMParameter, RowvLLMParameter):
+class _ModelWeightParameterMeta(_ColumnvLLMParameterMeta, _RowvLLMParameterMeta):
+    def __instancecheck__(self, instance):
+        if self is ModelWeightParameter or isinstance(instance, torch.Tensor):
+            return True
+        return super().__instancecheck__(instance)
+
+
+class ModelWeightParameter(
+    _ColumnvLLMParameter, RowvLLMParameter, metaclass=_ModelWeightParameterMeta
+):
     """
     Parameter class for linear layer weights. Uses both column and
     row parallelism.
@@ -295,7 +326,16 @@ class ModelWeightParameter(_ColumnvLLMParameter, RowvLLMParameter):
     pass
 
 
-class GroupQuantScaleParameter(_ColumnvLLMParameter, RowvLLMParameter):
+class _GroupQuantScaleParameterMeta(_ColumnvLLMParameterMeta, _RowvLLMParameterMeta):
+    def __instancecheck__(self, instance):
+        if self is GroupQuantScaleParameter or isinstance(instance, torch.Tensor):
+            return True
+        return super().__instancecheck__(instance)
+
+
+class GroupQuantScaleParameter(
+    _ColumnvLLMParameter, RowvLLMParameter, metaclass=_GroupQuantScaleParameterMeta
+):
     """
     Parameter class for weight scales loaded for weights with
     grouped quantization. Uses both column and row parallelism.
@@ -313,7 +353,16 @@ class ChannelQuantScaleParameter(_ColumnvLLMParameter):
     pass
 
 
-class BlockQuantScaleParameter(_ColumnvLLMParameter, RowvLLMParameter):
+class _BlockQuantScaleParameterMeta(_ColumnvLLMParameterMeta, _RowvLLMParameterMeta):
+    def __instancecheck__(self, instance):
+        if self is BlockQuantScaleParameter or isinstance(instance, torch.Tensor):
+            return True
+        return super().__instancecheck__(instance)
+
+
+class BlockQuantScaleParameter(
+    _ColumnvLLMParameter, RowvLLMParameter, metaclass=_BlockQuantScaleParameterMeta
+):
     """
     Parameter class for weight scales loaded for weights with
     block-wise quantization. Uses both column and row parallelism.
