@@ -142,7 +142,7 @@ class NPUW8A8Int8LinearMethod(_NPULinearMethodBase):
             quant_bias = layer.quant_bias_data
         return torch.ops.npu.npu_quant_matmul(
             x,
-            layer._data,
+            layer.weight_data,
             layer.deq_scale_data,
             bias=quant_bias,
             output_dtype=layer.params_dtype,

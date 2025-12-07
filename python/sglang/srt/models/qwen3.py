@@ -30,23 +30,6 @@ from sglang.srt.model_loader.weight_utils import (
 from sglang.srt.models.qwen2 import Qwen2MLP as Qwen3MLP
 from sglang.srt.models.qwen2 import Qwen2Model
 from sglang.srt.server_args import get_global_server_args
-from sglang.srt.utils import add_prefix, is_cuda, is_npu, supports_custom_op
-
-if (
-    is_npu()
-    and supports_custom_op()
-    and (
-        get_global_server_args().enable_torch_compile
-        or get_global_server_args().enable_piecewise_npu_graph_decode
-    )
-):
-    from sglang.srt.hardware_backend.npu.cmo_custom_ops import (
-        get_cmo_stream,
-        wait_cmo_stream,
-    )
-else:
-    from sglang.srt.hardware_backend.npu.cmo import get_cmo_stream, wait_cmo_stream
-
 from sglang.srt.utils import add_prefix, is_cuda, is_npu
 
 Qwen3Config = None
@@ -54,6 +37,9 @@ Qwen3Config = None
 logger = logging.getLogger(__name__)
 _is_cuda = is_cuda()
 _is_npu = is_npu()
+
+if _is_npu:
+    from sglang.srt.hardware_backend.npu.cmo import get_cmo_stream, wait_cmo_stream
 
 
 class Qwen3Attention(nn.Module):
