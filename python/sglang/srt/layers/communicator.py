@@ -59,7 +59,6 @@ from sglang.srt.utils import (
     is_npu,
     is_sm90_supported,
     is_sm100_supported,
-    prepare_weight_cache,
 )
 
 _is_cuda = is_cuda()
@@ -75,7 +74,7 @@ if _use_aiter and _is_gfx95_supported:
 
     from sglang.srt.layers.quantization.rocm_mxfp4_utils import fused_rms_mxfp4_quant
 elif _is_npu:
-    pass
+    from sglang.srt.hardware_backend.npu.cmo import prepare_weight_cache
 
 FUSE_ALLREDUCE_MAX_BATCH_SIZE = 2048
 
