@@ -73,7 +73,8 @@ if _use_aiter and _is_gfx95_supported:
     from aiter.ops.triton.fused_fp8_quant import fused_rms_fp8_group_quant
 
     from sglang.srt.layers.quantization.rocm_mxfp4_utils import fused_rms_mxfp4_quant
-elif _is_npu:
+
+if _is_npu:
     from sglang.srt.hardware_backend.npu.cmo import prepare_weight_cache
 
 FUSE_ALLREDUCE_MAX_BATCH_SIZE = 2048

@@ -30,7 +30,9 @@ from sglang.srt.model_loader.weight_utils import (
 from sglang.srt.models.qwen2 import Qwen2MLP as Qwen3MLP
 from sglang.srt.models.qwen2 import Qwen2Model
 from sglang.srt.server_args import get_global_server_args
-from sglang.srt.utils import add_prefix, is_cuda, is_npu
+from sglang.srt.utils import add_prefix, is_cuda, is_npu, supports_custom_op
+
+from sglang.srt.layers.parameter import ModelWeightParameter
 
 Qwen3Config = None
 
@@ -39,7 +41,14 @@ _is_cuda = is_cuda()
 _is_npu = is_npu()
 
 if _is_npu:
-    from sglang.srt.hardware_backend.npu.cmo import get_cmo_stream, wait_cmo_stream
+    if supports_custom_op() and (
+        get_global_server_args().enable_torch_compile
+        or get_global_server_args().enable_piecewise_npu_graph_decode
+    ):
+        from sglang.srt.hardware_backend.npu.cmo_custom_ops import get_cmo_stream, wait_cmo_stream
+        from sglang.srt.hardware_backend.npu.cmo import get_weight_cache
+else:
+    from sglang.srt.hardware_backend.npu.cmo import get_cmo_stream, wait_cmo_stream, get_weight_cache
 
 
 class Qwen3Attention(nn.Module):
@@ -272,7 +281,7 @@ class Qwen3DecoderLayer(nn.Module):
             residual,
             forward_batch,
             cache=(
-                [self.mlp.gate_up_proj.weight, self.mlp.down_proj.weight]
+                [ get_weight_cache(self.mlp.gate_up_proj), get_weight_cache(self.mlp.down_proj.weight)]
                 if _is_npu
                 else None
             ),

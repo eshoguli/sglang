@@ -71,7 +71,6 @@ from sglang.srt.utils import (
     is_flashinfer_available,
     is_non_idle_and_non_empty,
     is_npu,
-    supports_custom_op,
 )
 
 Qwen3MoeConfig = None
@@ -83,13 +82,7 @@ _is_cuda = is_cuda()
 _is_npu = is_npu()
 
 if _is_npu:
-    if supports_custom_op() and (
-        get_global_server_args().enable_torch_compile
-        or get_global_server_args().enable_piecewise_npu_graph_decode
-    ):
-        from sglang.srt._custom_ops import split_qkv_rmsnorm_rope
-    else:
-        from sgl_kernel_npu.norm.split_qkv_rmsnorm_rope import split_qkv_rmsnorm_rope
+    from sgl_kernel_npu.norm.split_qkv_rmsnorm_rope import split_qkv_rmsnorm_rope
 
 
 class Qwen3MoeSparseMoeBlock(nn.Module):
@@ -429,6 +422,7 @@ class Qwen3MoeAttention(nn.Module):
             q_bias=getattr(self.q_norm, "bias", None),
             k_bias=getattr(self.k_norm, "bias", None),
         )
+
         inner_state = q, k, v, forward_batch
         return None, forward_batch, inner_state
 
@@ -456,6 +450,7 @@ class Qwen3MoeAttention(nn.Module):
                 else None
             ),
         )
+
         inner_state = q, k, v, forward_batch
         return None, forward_batch, inner_state
 
@@ -484,8 +479,14 @@ class Qwen3MoeAttention(nn.Module):
         hidden_states, forward_batch, inner_state = intermediate_state
         if inner_state is None:
             return hidden_states
+
+        q, k, v, fb = inner_state
+
         attn_output = self.attn(
-            *inner_state,
+            q,
+            k,
+            v,
+            fb,
             save_kv_cache=not (
                 enable_fused_set_kv_buffer(forward_batch)
                 and self.compatible_with_fused_kv_buffer
