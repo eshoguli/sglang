@@ -1,8 +1,9 @@
-import torch
 from typing import List
-from sglang.srt.utils import direct_register_custom_op
+
+import torch
 
 import sglang.srt.hardware_backend.npu.cmo
+from sglang.srt.utils import direct_register_custom_op
 
 
 @torch.library.custom_op("sglang::wait_cmo_stream", mutates_args=())
