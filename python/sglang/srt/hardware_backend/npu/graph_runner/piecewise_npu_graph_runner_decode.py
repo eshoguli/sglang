@@ -400,10 +400,10 @@ class PiecewiseNPUGraphRunnerDecode:
         self.model_runner.attn_backend.graph_mode = True
 
         compiler = PiecewiseNpuGraphCompiler(
-            self.model_runner,
-            self.model_runner.model,
-            self.compilation_config,
-            self.compilation_context,
+            model_runner=self.model_runner,
+            model=self.model_runner.model,
+            compilation_config=self.compilation_config,
+            compilation_context=self.compilation_context,
         )
 
         logits_output_or_pp_proxy_tensors = compiler.compiled_callable(

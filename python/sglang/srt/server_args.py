@@ -3612,6 +3612,11 @@ class ServerArgs:
             help="Enable debug mode for torch compile",
         )
         parser.add_argument(
+            "--enable-torch-air-compile",
+            action="store_true",
+            help="Optimize the model with Torch Ascend Intermediate Representation compilation. Experimental feature.",
+        )
+        parser.add_argument(
             "--enable-piecewise-cuda-graph",
             action="store_true",
             help="Optimize the model with piecewise cuda graph for extend/prefill only. Experimental feature.",
