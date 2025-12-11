@@ -27,7 +27,7 @@ class NpuGraphCompiler:
     ):
         torch._dynamo.reset()
 
-        if compilation_config:
+        if compilation_config is None:
             compilation_config = CompilationConfig(compiler="npugraph")
 
         backend = get_compiler_backend(
