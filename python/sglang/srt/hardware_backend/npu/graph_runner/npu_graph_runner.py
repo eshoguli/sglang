@@ -48,7 +48,9 @@ from sglang.srt.compilation.custom_ops import (
     _set_dp_buffer_len,
     _set_is_extend_in_batch,
 )
-from sglang.srt.compilation.npu.npu_graph_compiler import NpuGraphCompiler
+from sglang.srt.hardware_backend.npu.graph_runner.compilation.npu_graph_compiler import (
+    NpuGraphCompiler,
+)
 from sglang.srt.layers.logits_processor import LogitsProcessorOutput
 from sglang.srt.model_executor.forward_batch_info import ForwardBatch, PPProxyTensors
 

@@ -1931,7 +1931,7 @@ def get_compiler_backend(
             )
 
         if mode == "npugraph_fused":
-            from sglang.srt.compilation.npu.npu_graph_compiler_backend import (
+            from sglang.srt.hardware_backend.npu.graph_runner.compilation.npu_graph_compiler_backend import (
                 NpuGraphCompilerBackend,
             )
 
