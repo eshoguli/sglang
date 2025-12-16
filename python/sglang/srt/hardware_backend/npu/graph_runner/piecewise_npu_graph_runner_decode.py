@@ -116,7 +116,7 @@ class PiecewiseNPUGraphRunnerDecode(CudaGraphRunner):
             self.num_token_non_padded = torch.zeros((1,), dtype=torch.int32)
             self.block_tables = torch.full((160, 160), 0, dtype=torch.int32)
 
-        super.__init__(model_runner)
+        super().__init__(model_runner)
 
     def capture(self, forward_batch_: ForwardBatch = None, bs_: int = None) -> None:
         with graph_capture() as graph_capture_context:
