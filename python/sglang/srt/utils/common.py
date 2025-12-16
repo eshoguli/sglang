@@ -238,14 +238,14 @@ def is_blackwell():
 
 @lru_cache(maxsize=1)
 def is_blackwell_supported(device=None) -> bool:
-    if not is_cuda_alike():
+    if not is_cuda():
         return False
     return is_sm100_supported(device) or is_sm120_supported(device)
 
 
 @lru_cache(maxsize=1)
 def is_sm120_supported(device=None) -> bool:
-    if not is_cuda_alike():
+    if not is_cuda():
         return False
     return (torch.cuda.get_device_capability(device)[0] == 12) and (
         torch.version.cuda >= "12.8"
@@ -1157,18 +1157,6 @@ def add_api_key_middleware(app, api_key: str):
         return await call_next(request)
 
 
-def prepare_model_and_tokenizer(model_path: str, tokenizer_path: str):
-    if get_bool_env_var("SGLANG_USE_MODELSCOPE"):
-        if not os.path.exists(model_path):
-            from modelscope import snapshot_download
-
-            model_path = snapshot_download(model_path)
-            tokenizer_path = snapshot_download(
-                tokenizer_path, ignore_patterns=["*.bin", "*.safetensors"]
-            )
-    return model_path, tokenizer_path
-
-
 def configure_logger(server_args, prefix: str = ""):
     if SGLANG_LOGGING_CONFIG_PATH := os.getenv("SGLANG_LOGGING_CONFIG_PATH"):
         if not os.path.exists(SGLANG_LOGGING_CONFIG_PATH):
@@ -1957,15 +1945,6 @@ def get_device_capability(device_id: int = 0) -> Tuple[int, int]:
     return major, minor
 
 
-def get_npu_compiler_config():
-    config = {
-        "frozen_parameter": True,
-        "tiling_schedule_optimize": True,
-        "topology_sorting_strategy": "StableRDFS",
-    }
-    return config
-
-
 @lru_cache(maxsize=1)
 def get_compiler_backend(
     mode: str = None,
@@ -2004,7 +1983,9 @@ def get_compiler_backend(
                 )
             compiler_config = CompilerConfig()
             compiler_config.mode = "max-autotune" if mode is None else mode
-
+            if mode == "npugraph_ex":
+                compiler_config.mode = "reduce-overhead"
+                compiler_config.debug.run_eagerly = True
             npu_backend = torchair.get_npu_backend(compiler_config=compiler_config)
             return npu_backend
 
